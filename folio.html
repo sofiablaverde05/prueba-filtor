@@ -10,21 +10,29 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Gaegu:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/folio.css">
+
+    <!-- three.js y sus modulos (igual que index.html) -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/"
+        }
+    }
+    </script>
 </head>
 
 <body>
     <main id="stage" data-phase="intro">
         <video id="video-renderer" playsinline muted></video>
-        <canvas id="canvas-renderer"></canvas>
-        <div id="vignette"></div>
-        <div id="frame"></div>
+        <div id="three-layer"></div>
 
         <!-- INTRO -->
         <section id="intro" class="screen">
             <div class="intro-card">
                 <p class="pill"><span>✱</span> FOLIO · MOOD LECTOR</p>
                 <h1>Tu cara también <em>cuenta historias.</em></h1>
-                <p class="lead">Responde tres preguntas <b>girando la cabeza</b> hacia la tarjeta que elijas y descubre qué lectura conecta contigo hoy. Sin spoilers.</p>
+                <p class="lead">Responde tres preguntas <b>inclinando la cabeza</b> hacia la tarjeta que elijas y descubre qué lectura conecta contigo hoy. Sin spoilers.</p>
                 <button id="start" class="btn primary">Empezar <span>→</span></button>
                 <p class="fine">Usa tu cámara y tu sonido. El reconocimiento de la cara ocurre en tu dispositivo: no se envía ni se guarda ninguna imagen.</p>
             </div>
@@ -39,7 +47,7 @@
             <header class="q-head">
                 <p class="pill"><span>✱</span> <b id="q-step">1 / 3</b> · <span id="q-kicker"></span></p>
                 <h2 id="q-title" aria-live="polite"></h2>
-                <p class="hint">Gira la cabeza hacia la tarjeta que elijas y mantenla un momento</p>
+                <p class="hint">Inclina la cabeza hacia la tarjeta que elijas y mantenla un momento</p>
                 <p class="dots" aria-hidden="true"><i></i><i></i><i></i></p>
             </header>
             <div class="cards">
@@ -48,17 +56,21 @@
             </div>
         </section>
 
-        <!-- RESULTADO -->
+        <!-- RESULTADO: solo el nombre del genero; el detalle esta detras del boton (i) -->
         <section id="result" class="screen">
-            <div class="r-card" id="r-card">
-                <button id="r-toggle" type="button" aria-label="Mostrar u ocultar detalles">▾</button>
-                <p class="pill"><span>✱</span> TU MOOD LECTOR HOY</p>
+            <header class="r-head">
+                <p class="pill"><span>✱</span> TU MOOD LECTOR</p>
                 <h2 id="r-name"></h2>
+                <p id="r-gesture" class="gesture"><b id="r-gesture-text"></b><i id="r-gesture-reward"></i></p>
+            </header>
+            <div class="r-actions">
+                <button id="r-toggle" class="round" type="button" aria-label="Ver por qué y qué leer">i</button>
+                <button id="restart" class="round" type="button" aria-label="Volver a empezar">↻</button>
+            </div>
+            <div class="r-card" id="r-card" hidden>
                 <p id="r-mood" class="mood"></p>
                 <ul id="r-chips" class="chips"></ul>
                 <p id="r-read" class="read"></p>
-                <div id="r-gesture" class="gesture"><span class="g-icon">☺</span><span><b id="r-gesture-text"></b> y mira qué le pasa a tu cara <i id="r-gesture-reward"></i></span></div>
-                <button id="restart" class="btn ghost">Volver a empezar ↻</button>
             </div>
         </section>
 

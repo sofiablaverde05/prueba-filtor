@@ -2,6 +2,8 @@
 // Para cambiarlos por mp3 reales, reemplaza el cuerpo de la funcion del genero
 // por `this.file("assets/mi_sonido.mp3")`.
 
+const SOUND_NAMES = new Set(["fantasia", "romance", "scifi", "terror", "misterio", "aventura", "drama", "historico", "pop", "twinkle", "whoosh", "thunder", "drip", "laser"]);
+
 export default class Sfx {
 
     constructor() { this.ctx = null; this.muted = false; this.buffers = {}; }
@@ -130,7 +132,34 @@ export default class Sfx {
 
     // ---- Un sonido por genero -------------------------------------------
 
-    playGenre(id) { if (this.ctx && !this.muted) this[id]?.(); }
+    playGenre(id) { this.play(id); }
+
+    // Desde los scripts de la escena:  window.folio.sfx.play("terror")
+    // Nombres: fantasia romance scifi terror misterio aventura drama historico (uno por genero)
+    //          + pop twinkle whoosh thunder drip laser (cortos, para reutilizar).
+    // Para un mp3 propio:  window.folio.sfx.file("assets/mi_sonido.mp3", 0.8)
+    play(name) {
+        if (!this.ctx || this.muted || !SOUND_NAMES.has(name)) return;
+        this[name]();
+    }
+
+    async file(url, vol = 1) {
+        if (!this.ctx || this.muted) return;
+        try {
+            if (!this.buffers[url]) this.buffers[url] = await this.ctx.decodeAudioData(await (await fetch(url)).arrayBuffer());
+            const src = this.ctx.createBufferSource(), g = this.ctx.createGain();
+            src.buffer = this.buffers[url]; g.gain.value = vol;
+            src.connect(g); g.connect(this.master); src.start();
+        } catch (err) { console.warn("Sfx.file:", url, err); }
+    }
+
+    // ---- Sonidos cortos reutilizables ----
+    pop() { this.tone({ f: 500, f2: 150, dur: 0.12, vol: 0.3, type: "triangle" }); this.noise({ type: "bandpass", f: 1500, dur: 0.05, vol: 0.12 }); }
+    twinkle() { [1760, 2349, 2637].forEach((f, i) => this.tone({ f, t: i * 0.05, dur: 0.35, vol: 0.08, wet: 0.7 })); }
+    whoosh() { this.noise({ type: "bandpass", f: 300, f2: 4000, q: 0.7, dur: 0.5, vol: 0.14, a: 0.2 }); }
+    thunder() { this.noise({ type: "lowpass", f: 600, f2: 80, dur: 1.6, vol: 0.5, a: 0.05, wet: 0.5 }); this.tone({ f: 60, f2: 30, dur: 1.2, vol: 0.4 }); }
+    drip() { this.tone({ f: 1400, f2: 600, dur: 0.12, vol: 0.12, wet: 0.5 }); }
+    laser() { this.tone({ f: 1800, f2: 200, slide: 0.18, dur: 0.22, vol: 0.12, type: "sawtooth", lp: 4000 }); }
 
     fantasia() {
         [1047, 1319, 1568, 1760, 2093, 2637].forEach((f, i) => {

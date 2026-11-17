@@ -1,36 +1,88 @@
-// FolioMood Lector — orquesta camara, preguntas, resultado y efectos.
-// Pagina: folio.html. Reutiliza WebCamera y MPFaceTracker del filtro base.
+// FolioMood Lector — orquesta camara, preguntas y resultado en 3D.
+// Pagina: folio.html. Cada genero es una escena del editor de three.js: scenes/<genero>.json
+// (opcional scenes/quiz.json durante las preguntas). Ver GUIA_3D.md.
 
 import Sfx from "./audio.js";
 import Quiz from "./quiz.js";
-import { QUESTIONS, GENRES, genreFor } from "./config.js";
-import { readFeatures, smoothFeatures, GESTURES, Trigger } from "./gestures.js";
-import { createLooks, FaceCtx, Particles } from "./effects.js";
+import { QUESTIONS, GENRES, GESTURE_TEXT, genreFor, SELECT } from "./config.js";
+import ThreePlayer from "../app.js";
+import ThreeFaceRenderer from "../mediapipe/three_face_renderer.js";
+import FaceEvents from "../mediapipe/face_events.js";
+import { createFaceMask } from "../mediapipe/face_mask.js";
 
 const $ = (s) => document.querySelector(s);
+const MASK_NAME = "mesh_0";
 
 // `deps` permite sustituir camara/tracker (pruebas): { createCamera(video), createTracker(video) }.
 export async function startFolio(deps = {}) {
 
-    const stage = $("#stage"), video = $("#video-renderer"), canvas = $("#canvas-renderer");
-    const vignette = $("#vignette"), ctx = canvas.getContext("2d");
+    const stage = $("#stage"), video = $("#video-renderer"), layer = $("#three-layer");
     const params = new URLSearchParams(location.search);
     const debugEl = $("#debug");
     if (params.has("debug")) debugEl.hidden = false;
 
     const sfx = new Sfx();
-    const looks = createLooks();
-    const particles = new Particles();
-    const face = new FaceCtx();
+    const faceEvents = new FaceEvents();
+    const player = new ThreePlayer(layer);
+    player.face = faceEvents;
+    let faceRenderer = null;
 
     let phase = "intro";
     let tracker = null, camera = null, trackingOn = false;
-    let feats = null, landmarks = null;
-    let genreId = null, trigger = null, rewardShown = false;
-    let lastGrade = "", lastVig = "";
+    let genreId = null, rewardShown = false, mask = null, sceneToken = 0;
 
     const setPhase = (p) => { phase = p; stage.dataset.phase = p; };
     const toast = (msg, ms = 4000) => { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), ms); };
+
+    // ---- Escenas 3D ---------------------------------------------------------
+
+    // Carga scenes/<name>.json. Devuelve true si se cargo; si no existe deja la escena vacia.
+    async function loadScene(name, fallbackMakeup = null) {
+        const token = ++sceneToken;
+        disposeMask();
+        player.stop();
+        player.rootNode.clear();
+        let ok = false;
+        try {
+            await player.loadProject(`scenes/${name}.json`);
+            ok = true;
+        } catch (err) {
+            if (name !== "quiz") toast(`Falta scenes/${name}.json (o tiene un error). Mira la consola.`, 6000);
+            console.warn(`Escena "${name}":`, err);
+        }
+        if (token !== sceneToken) return false;
+        if (ok) {
+            mask = player.rootNode.getObjectByName(MASK_NAME);
+            if (mask) {
+                // La mascara se coloca vertice a vertice; sus hijos siguen la cabeza como el resto.
+                for (const child of [...mask.children]) mask.parent.attach(child);
+                faceRenderer?.faceGroup.add(mask);
+            }
+        }
+        if (!mask && fallbackMakeup) await useMakeupFallback(fallbackMakeup, token);
+        return ok;
+    }
+
+    function useMakeupFallback(file, token) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                if (token !== sceneToken) return resolve();
+                mask = createFaceMask(img, { lit: false });
+                faceRenderer?.faceGroup.add(mask);
+                resolve();
+            };
+            img.onerror = () => resolve();
+            img.src = file;
+        });
+    }
+
+    function disposeMask() {
+        if (!mask) return;
+        mask.parent?.remove(mask);
+        mask.geometry?.dispose();
+        mask = null;
+    }
 
     // ---- Tarjetas -----------------------------------------------------------
 
@@ -52,7 +104,7 @@ export async function startFolio(deps = {}) {
     }
 
     const quiz = new Quiz({
-        total: QUESTIONS.length,
+        total: QUESTIONS.length, ...SELECT,
         onProgress: (hold) => hold.forEach((h, n) => { cards[n].style.setProperty("--p", h.toFixed(3)); cards[n].classList.toggle("charging", h > 0.02); }),
         onTick: (p, side) => sfx.tick(p, side),
         onPick: (side, i) => {
@@ -76,17 +128,17 @@ export async function startFolio(deps = {}) {
         setPhase("reveal");
         sfx.reveal();
         quiz.answers = answers;
-        setTimeout(() => showResult(genreFor(answers), answers), 1700);
+        const id = genreFor(answers);
+        // Se carga la escena mientras suena la animacion de "revelando".
+        const ready = loadScene(id, `assets/folio/makeup_${id}.png`);
+        setTimeout(async () => { await ready; showResult(id, answers, false); }, 1700);
     }
 
-    function showResult(id, answers = []) {
+    async function showResult(id, answers = [], load = true) {
         const g = GENRES[id];
+        if (load) await loadScene(id, `assets/folio/makeup_${id}.png`);
         genreId = id;
-        const gc = GESTURES[id];
-        trigger = new Trigger({ ...gc, cooldown: 1400 });
         rewardShown = false;
-        particles.clear();
-
         stage.dataset.genre = id;
         stage.style.setProperty("--accent", g.accent);
         $("#r-name").textContent = g.name;
@@ -94,28 +146,40 @@ export async function startFolio(deps = {}) {
         $("#r-read").innerHTML = `Para leer hoy: <b></b> <span></span>`;
         $("#r-read b").textContent = g.read.title;
         $("#r-read span").textContent = `· ${g.read.author}`;
-        $("#r-gesture-text").textContent = g.gesture.hint;
+        $("#r-gesture-text").textContent = g.gestures.map((x) => GESTURE_TEXT[x.event]).join("  ·  ");
         $("#r-gesture").classList.remove("done");
         $("#r-gesture-reward").textContent = "";
-        $("#r-chips").innerHTML = answers.map((a, i) => `<li></li>`).join("");
+        $("#r-gesture-text").hidden = false;
+        $("#r-chips").innerHTML = answers.map(() => `<li></li>`).join("");
         [...$("#r-chips").children].forEach((li, i) => (li.textContent = QUESTIONS[i].options[answers[i]].short));
-        $("#r-card").classList.remove("min");
+        $("#r-card").hidden = true;
         setPhase("result");
     }
 
-    function restart() {
+    // Marca el premio cuando la persona hace uno de los gestos del genero.
+    faceEvents.addListener((type, f) => {
+        player.dispatch(type, f);
+        if (phase !== "result" || !genreId || rewardShown) return;
+        const hit = GENRES[genreId].gestures.find((x) => x.event === type);
+        if (!hit) return;
+        rewardShown = true;
+        $("#r-gesture").classList.add("done");
+        $("#r-gesture-text").hidden = true;
+        $("#r-gesture-reward").textContent = `✓ ${hit.reward}`;
+    });
+
+    async function restart() {
         sfx.choose(0);
         quiz.reset();
-        particles.clear();
         genreId = null;
         delete stage.dataset.genre;
-        video.style.filter = ""; vignette.style.background = ""; lastGrade = lastVig = "";
         renderQuestion(0);
         setPhase("quiz");
+        await loadScene("quiz");   // opcional: sticker / iconos que caen
     }
 
     $("#restart").addEventListener("click", restart);
-    $("#r-toggle").addEventListener("click", () => $("#r-card").classList.toggle("min"));
+    $("#r-toggle").addEventListener("click", () => { const c = $("#r-card"); c.hidden = !c.hidden; });
     $("#mute").addEventListener("click", (e) => {
         sfx.setMuted(!sfx.muted);
         e.currentTarget.setAttribute("aria-pressed", String(sfx.muted));
@@ -134,6 +198,9 @@ export async function startFolio(deps = {}) {
             tracker = await mkTracker(video);
             await tracker.init();
             trackingOn = true;
+            faceRenderer = new ThreeFaceRenderer(video, player);
+            faceRenderer.alignCamera();
+            faceRenderer.showHelpers = false;
         } catch (err) {
             console.error(err);
             toast("No pude usar la cámara. Puedes responder tocando las tarjetas o con las flechas ← →.", 7000);
@@ -141,10 +208,13 @@ export async function startFolio(deps = {}) {
         }
         renderQuestion(0);
         setPhase("quiz");
-        if (params.get("genre") && GENRES[params.get("genre")]) showResult(params.get("genre"), [0, 0, 0]);
+        const forced = params.get("genre");
+        if (forced && GENRES[forced]) showResult(forced, [0, 0, 0]);
+        else loadScene("quiz");
     }
 
     $("#start").addEventListener("click", async () => { await sfx.unlock(); begin(); });
+    addEventListener("resize", () => { player.resize(); faceRenderer?.alignCamera(); });
 
     // ---- Bucle ---------------------------------------------------------------
 
@@ -152,70 +222,50 @@ export async function startFolio(deps = {}) {
 
     function frame(now) {
         requestAnimationFrame(frame);
-        const dt = Math.min(0.1, (now - last) / 1000);
-        last = now;
+        const dt = now - last; last = now;
 
-        // Camara -> rasgos de la cara
-        if (trackingOn) {
+        if (trackingOn && faceRenderer) {
             tracker.update();
-            landmarks = tracker.getLandmarks();
-            if (landmarks) {
-                const W = video.videoWidth || 1280, H = video.videoHeight || 720;
-                feats = smoothFeatures(feats, readFeatures(landmarks, tracker.getBlendShapes(), W, H));
-            } else feats = null;
-            stage.classList.toggle("no-face", !landmarks && (phase === "quiz" || phase === "result"));
-        }
+            if (video.videoWidth) faceEvents.aspect = video.videoWidth / video.videoHeight;
+            faceEvents.update(tracker);
 
-        const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
-        if (canvas.width !== vw || canvas.height !== vh) { canvas.width = vw; canvas.height = vh; }
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const landmarks = tracker.getLandmarks();
+            faceRenderer.drawMesh(landmarks);
+            faceRenderer.drawConnectors(landmarks);
+            faceRenderer.drawContours(landmarks);
+            faceRenderer.drawIrises(landmarks);
+            faceRenderer.drawPoints(landmarks);
+            if (mask) faceRenderer.syncFaceMesh(mask);
 
-        if (phase === "quiz") {
-            quiz.update(feats ? feats.yaw : null, dt * 1000, now);
-        } else if (phase === "result" && genreId) {
-            drawResult(now, dt);
-        }
-
-        if (!params.has("debug")) return;
-        const f = feats;
-        debugEl.textContent = !f ? "sin cara" :
-            `yaw ${f.yaw.toFixed(2)}  roll ${f.roll.toFixed(0)}°\nsonrisa ${f.smile.toFixed(2)}  beso ${f.pucker.toFixed(2)}\nboca ${f.jaw.toFixed(2)}  cejas ${f.brow.toFixed(2)}\nguiño ${f.wink.toFixed(2)}  puchero ${f.frown.toFixed(2)}` +
-            (genreId ? `\n[${genreId}] gesto ${GESTURES[genreId].value(f).toFixed(2)} / umbral ${GESTURES[genreId].enter}` : "");
-    }
-
-    function drawResult(now, dt) {
-        const look = looks[genreId];
-        const t = now / 1000;
-        let st = { active: false, started: false, ended: false, k: 0, elapsed: 0, v: 0 };
-
-        if (landmarks && feats) {
-            st = trigger.update(GESTURES[genreId].value(feats), now);
-            if (st.started) {
-                sfx.playGenre(genreId);
-                if (!rewardShown) {
-                    rewardShown = true;
-                    $("#r-gesture").classList.add("done");
-                    $("#r-gesture-reward").textContent = `✓ ${GENRES[genreId].gesture.reward}`;
-                }
+            const detected = tracker.getFaceCount() > 0;
+            player.rootNode.visible = detected;
+            if (mask) mask.visible = detected;
+            const pose = detected ? faceRenderer.getHeadPose() : null;
+            if (pose) {
+                player.rootNode.position.copy(pose.position);
+                player.rootNode.quaternion.copy(pose.quaternion);
+                player.rootNode.scale.setScalar(pose.scale);
             }
-            face.begin(ctx, canvas.width, canvas.height, landmarks, feats);
-            ctx.save();
-            look.draw(face, st, t, dt, particles);
-            ctx.restore();
-        } else trigger.update(0, now);
+            stage.classList.toggle("no-face", !detected && (phase === "quiz" || phase === "result"));
 
-        particles.update(dt);
-        particles.draw(ctx);
+            if (phase === "quiz") quiz.update(detected ? faceEvents.tilt : null, dt, now);
+        }
 
-        const grade = look.grade(st), vig = look.vignette(st);
-        if (grade !== lastGrade) { video.style.filter = grade; lastGrade = grade; }
-        if (vig !== lastVig) { vignette.style.background = vig; lastVig = vig; }
+        player.update();
+
+        if (params.has("debug")) {
+            const f = faceEvents;
+            debugEl.textContent = !f.detected ? "sin cara" :
+                `inclinación ${f.tilt.toFixed(0)}° (elige a ±${SELECT.enter}°)  giro ${f.yaw.toFixed(2)}  pitch ${f.pitch.toFixed(2)}\n` +
+                `boca ${f.jawOpen.toFixed(2)}  sonrisa ${f.smile.toFixed(2)}  beso ${f.kiss.toFixed(2)}  cejas ${f.browRaise.toFixed(2)}\n` +
+                `guiño ${f.wink.toFixed(2)}  puchero ${f.frown.toFixed(2)}  lengua ${f.tongue.toFixed(2)}  mejillas ${f.puff.toFixed(2)}\n` +
+                `O ${f.funnel.toFixed(2)}  ojos grandes ${f.eyesWide.toFixed(2)}  ceño ${f.browDown.toFixed(2)}` +
+                (genreId ? `\n[${genreId}] gestos: ${GENRES[genreId].gestures.map((g) => g.event).join(", ")}` : "");
+        }
     }
-
     requestAnimationFrame(frame);
 
-    // Para depurar desde la consola.
-    const api = { quiz, sfx, particles, looks, showResult, restart, get feats() { return feats; }, get phase() { return phase; } };
+    const api = { quiz, sfx, player, faceEvents, showResult, restart, get faceRenderer() { return faceRenderer; }, get phase() { return phase; } };
     window.folio = api;
     return api;
 }

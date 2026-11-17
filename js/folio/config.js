@@ -7,6 +7,10 @@
 //   Eje 2 (animo):      0 = luz y calma          | 1 = inquietud
 //   Eje 3 (movimiento): 0 = salir y descubrir    | 1 = quedarse a pensar y sentir
 
+// Seleccion de tarjetas: se inclina la cabeza hacia la tarjeta (como en los filtros de TikTok).
+// enter/exit en grados de inclinacion; holdMs = cuanto hay que mantenerla.
+export const SELECT = { enter: 10, exit: 5, holdMs: 800 };
+
 export const QUESTIONS = [
     {
         kicker: "Qué prefieres",
@@ -50,55 +54,69 @@ export function genreFor(answers) {
     return GENRE_ORDER[answers[0] * 4 + answers[1] * 2 + answers[2]];
 }
 
-// `gesture` es el movimiento de cara que activa el efecto propio del genero
-// (los umbrales estan en gestures.js). `read` es la sugerencia de lectura.
+// Texto que ve la persona para cada evento de face_events.js.
+export const GESTURE_TEXT = {
+    mouthOpen: "Abre la boca", smileStart: "Sonríe", blink: "Parpadea", browRaise: "Levanta las cejas",
+    kiss: "Manda un beso", frown: "Haz un puchero", wink: "Guiña un ojo", winkLeft: "Guiña el ojo izquierdo", winkRight: "Guiña el ojo derecho",
+    tongue: "Saca la lengua", puff: "Infla las mejillas", oMouth: "Haz una O con la boca", eyesWide: "Abre muy grandes los ojos", angry: "Frunce el ceño",
+    tiltLeft: "Inclina la cabeza a la izquierda", tiltRight: "Inclina la cabeza a la derecha",
+    turnLeft: "Gira la cabeza a la izquierda", turnRight: "Gira la cabeza a la derecha",
+    lookUp: "Mira hacia arriba", lookDown: "Mira hacia abajo",
+};
+
+// Por genero:
+//  name / accent / mood / read : textos del resultado.
+//  gestures : eventos de face_events.js que tu escena (scenes/<genero>.json) reacciona.
+//             Solo sirven para mostrar la pista en pantalla y el "✓ premio" cuando la persona
+//             lo hace: la animacion real la programas en los scripts de la escena.
+//             Los gestos se pueden repetir entre generos.
 export const GENRES = {
     historico: {
         name: "Histórico", accent: "#b8862f",
         mood: "Hoy te pide ver cómo era el mundo antes de ti: épocas, imperios y personas que existieron de verdad.",
         read: { title: "Los pilares de la Tierra", author: "Ken Follett" },
-        gesture: { hint: "Inclina la cabeza", reward: "Corona de laurel" },
+        gestures: [{ event: "tiltLeft", reward: "Corona de laurel" }, { event: "puff", reward: "Bigote de época" }],
     },
     romance: {
         name: "Romance", accent: "#e2506f",
         mood: "Hoy tu corazón pide una historia que abrace: miradas, silencios y vínculos que se construyen despacio.",
         read: { title: "Orgullo y prejuicio", author: "Jane Austen" },
-        gesture: { hint: "Manda un beso", reward: "Lluvia de corazones" },
+        gestures: [{ event: "kiss", reward: "Lluvia de corazones" }, { event: "wink", reward: "Ojos de corazón" }],
     },
     misterio: {
         name: "Misterio", accent: "#4a6fa5",
         mood: "Hoy quieres pistas, no respuestas. Una historia que te invite a sospechar de todos (y un poco de ti).",
         read: { title: "Asesinato en el Orient Express", author: "Agatha Christie" },
-        gesture: { hint: "Guiña un ojo", reward: "Foco de investigación" },
+        gestures: [{ event: "wink", reward: "Lupa de detective" }, { event: "lookDown", reward: "Sombrero de investigador" }],
     },
     drama: {
         name: "Drama", accent: "#5b7fa3",
         mood: "Hoy necesitas una historia que te deje sentir hondo: decisiones difíciles y personas que podrían ser reales.",
         read: { title: "Crimen y castigo", author: "Fiódor Dostoievski" },
-        gesture: { hint: "Haz un puchero (cara triste)", reward: "Llanto y lluvia" },
+        gestures: [{ event: "frown", reward: "Llanto y lluvia" }, { event: "lookDown", reward: "Tormenta" }],
     },
     aventura: {
         name: "Aventura", accent: "#e08a1e",
         mood: "Hoy el cuerpo pide camino: mapas, riesgos y compañeros para cruzar lo desconocido.",
         read: { title: "El Hobbit", author: "J. R. R. Tolkien" },
-        gesture: { hint: "Gira la cabeza", reward: "Brújula y fanfarria" },
+        gestures: [{ event: "turnRight", reward: "Brújula" }, { event: "lookUp", reward: "Amanecer" }],
     },
     fantasia: {
         name: "Fantasía", accent: "#9a6ad8",
         mood: "Hoy quieres asombro: mundos con reglas propias donde lo imposible se siente cercano.",
         read: { title: "Alicia en el país de las maravillas", author: "Lewis Carroll" },
-        gesture: { hint: "Sonríe", reward: "Polvo de hadas" },
+        gestures: [{ event: "smileStart", reward: "Polvo de hadas" }, { event: "oMouth", reward: "Soplo mágico" }],
     },
     terror: {
         name: "Terror", accent: "#c0392b",
         mood: "Hoy te provoca mirar a la oscuridad: una historia que te haga revisar dos veces ese rincón del cuarto.",
         read: { title: "IT", author: "Stephen King" },
-        gesture: { hint: "Abre la boca (grita)", reward: "Grito" },
+        gestures: [{ event: "mouthOpen", reward: "Grito" }, { event: "angry", reward: "Ojos rojos" }],
     },
     scifi: {
         name: "Ciencia ficción", accent: "#1fa7c9",
         mood: "Hoy quieres preguntas grandes: futuros posibles que te hagan mirar tu presente distinto.",
         read: { title: "Fahrenheit 451", author: "Ray Bradbury" },
-        gesture: { hint: "Levanta las cejas", reward: "Escáner holográfico" },
+        gestures: [{ event: "browRaise", reward: "Escáner holográfico" }, { event: "eyesWide", reward: "Ojos láser" }],
     },
 };
