@@ -1,0 +1,1 @@
+Pon aqui tus mp3 (ej. it_risa.mp3). Los scripts de las escenas ya apuntan a estos nombres: it_risa.mp3 (terror). Si el archivo no existe, suena el sonido sintetizado.
